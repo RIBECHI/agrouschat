@@ -1,0 +1,126 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Regra Geral: Bloqueia tudo por padrão, exceto para usuários autenticados
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Coleção de Usuários
+    match /users/{userId} {
+      // Qualquer usuário autenticado pode criar seu próprio perfil
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // Apenas o próprio usuário pode ler ou atualizar seu perfil
+      allow read, update: if request.auth != null && request.auth.uid == userId;
+      // Permite que admins leiam qualquer perfil de usuário
+      allow read: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      // A exclusão de conta é tratada pelo backend/funções de nuvem
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Coleção de Posts (Feed)
+    match /posts/{postId} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.authorId;
+      
+      // Comentários
+      match /comments/{commentId} {
+        allow read, create: if request.auth != null;
+        allow update, delete: if request.auth.uid == resource.data.authorId;
+      }
+    }
+    
+    // Coleção de Eventos
+    match /events/{eventId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == request.resource.data.userId;
+      allow delete: if request.auth.uid == resource.data.userId;
+    }
+
+    // Coleção de Talhões
+    match /farmPlots/{plotId} {
+      allow read, create: if request.auth.uid == request.resource.data.userId;
+      allow update, delete: if request.auth.uid == resource.data.userId;
+    }
+
+    // Coleção de Safras
+    match /harvests/{harvestId} {
+      allow read, create: if request.auth.uid == request.resource.data.userId;
+      allow update, delete: if request.auth.uid == resource.data.userId;
+
+      // Subcoleção de Talhões da Safra
+      match /harvestPlots/{harvestPlotId} {
+          allow read, create: if request.auth.uid == request.resource.data.userId;
+          allow delete: if request.auth.uid == resource.data.userId;
+
+          // Subcoleção de Operações
+          match /operations/{operationId} {
+             allow read, create: if request.auth.uid == request.resource.data.userId;
+             allow update, delete: if request.auth.uid == resource.data.userId;
+          }
+      }
+    }
+    
+    // Coleção de Maquinário
+    match /machinery/{machineId} {
+        allow read, create: if request.auth.uid == request.resource.data.userId;
+        allow update, delete: if request.auth.uid == resource.data.userId;
+
+        match /maintenances/{maintId} {
+           allow read, create: if request.auth.uid == request.resource.data.userId;
+           allow update, delete: if request.auth.uid == resource.data.userId;
+        }
+    }
+
+    // Coleção de Itens (Insumos)
+    match /items/{itemId} {
+       allow read, create: if request.auth.uid == request.resource.data.userId;
+       allow update, delete: if request.auth.uid == resource.data.userId;
+    }
+
+    // Coleção de Logs de Inventário
+    match /inventoryLogs/{logId} {
+      allow read, create: if request.auth.uid == request.resource.data.userId;
+    }
+    
+    // Coleção de Lotes de Gado (Livestock)
+    match /livestockLots/{lotId} {
+        allow read, create: if request.auth.uid == request.resource.data.userId;
+        allow update, delete: if request.auth.uid == resource.data.userId;
+
+        match /animals/{animalId} {
+           allow create: if request.auth.uid == request.resource.data.userId;
+           allow read, update, delete: if request.auth.uid == resource.data.userId;
+        }
+        
+        match /movementHistory/{moveId} {
+          allow create: if request.auth.uid == request.resource.data.userId;
+          allow read, update, delete: if request.auth.uid == resource.data.userId;
+        }
+    }
+
+    // Coleção de Anúncios (Marketplace)
+    match /listings/{listingId} {
+       allow read: if true; // Anúncios são públicos
+       allow create: if request.auth.uid == request.resource.data.userId;
+       allow update, delete: if request.auth.uid == resource.data.userId;
+    }
+    
+    // Coleção de Pedidos de Orçamento
+    match /quoteRequests/{quoteId} {
+      // Permite a leitura de um único documento pelo seu criador ou por um fornecedor da categoria alvo.
+      allow get: if request.auth.uid == resource.data.userId 
+                  || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in resource.data.targetCategories) 
+                  || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      
+      // Permite que usuários autenticados listem os orçamentos (essencial para o mural).
+      allow list: if request.auth != null;
+
+      // Permite criar e deletar apenas os próprios orçamentos.
+      allow create: if request.auth.uid == request.resource.data.userId;
+      allow delete: if request.auth.uid == resource.data.userId;
+    }
+  }
+}
